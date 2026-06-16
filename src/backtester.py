@@ -17,7 +17,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from PIL import Image
 
-import src.config_real as config_real
+import src.core_config as config
 from utils.daily_bias_util   import DailyBiasUtil
 from utils.h1_structure_util import H1StructureUtil
 from utils.m5_entry_util     import M5EntryUtil
@@ -32,12 +32,12 @@ class Backtester:
 
     def __init__(
         self,
-        csv_path:  str   = config_real.BACKTEST_CSV_PATH,
-        start_idx: int   = config_real.BACKTEST_START_IDX,
+        csv_path:  str   = config.BACKTEST_CSV_PATH,
+        start_idx: int   = config.BACKTEST_START_IDX,
         end_idx:   int   = None,
-        step:      int   = config_real.BACKTEST_STEP,
-        api_key:   str   = config_real.GEMINI_API_KEY,
-        model_name: str  = config_real.GEMINI_MODEL,
+        step:      int   = config.BACKTEST_STEP,
+        api_key:   str   = config.GEMINI_API_KEY,
+        model_name: str  = config.GEMINI_MODEL,
         chart_folder: str = "data/backtest_charts",
         log_path:  str   = "data/logs/backtest_result.csv",
         call_ai:   bool  = True,   # False = chỉ tạo chart, không gọi AI (tiết kiệm quota)
@@ -245,8 +245,8 @@ class Backtester:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="ICT V2 Backtester")
-    parser.add_argument("--csv",   default=config_real.BACKTEST_CSV_PATH, help="Đường dẫn CSV H1")
-    parser.add_argument("--start", type=int, default=config_real.BACKTEST_START_IDX)
+    parser.add_argument("--csv",   default=config.BACKTEST_CSV_PATH, help="Đường dẫn CSV H1")
+    parser.add_argument("--start", type=int, default=config.BACKTEST_START_IDX)
     parser.add_argument("--end",   type=int, default=None)
     parser.add_argument("--step",  type=int, default=4,    help="Bước nhảy nến H1 (mặc định 4 = 4H)")
     parser.add_argument("--no-ai", action="store_true",    help="Chỉ tạo chart, không gọi AI")

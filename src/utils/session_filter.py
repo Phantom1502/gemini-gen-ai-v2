@@ -8,7 +8,7 @@ Tách riêng khỏi Trader để dễ test độc lập.
 import datetime
 import MetaTrader5 as mt5
 from typing import Optional, List, Dict
-import src.config_real as config_real
+import config
 
 
 class SessionFilter:
@@ -30,8 +30,8 @@ class SessionFilter:
         if now is None:
             now = datetime.datetime.now()
 
-        sessions        = sessions        or config_real.ALLOWED_SESSIONS
-        allowed_weekdays = allowed_weekdays or config_real.ALLOWED_WEEKDAYS
+        sessions        = sessions        or config.ALLOWED_SESSIONS
+        allowed_weekdays = allowed_weekdays or config.ALLOWED_WEEKDAYS
 
         # Kiểm tra ngày trong tuần
         weekday = now.weekday()  # 0=Mon, 6=Sun
@@ -40,9 +40,9 @@ class SessionFilter:
 
         # Kiểm tra force-close Thứ 6
         if weekday == 4:
-            fc_time = datetime.datetime.strptime(config_real.FORCE_CLOSE_FRIDAY_TIME, "%H:%M").time()
+            fc_time = datetime.datetime.strptime(config.FORCE_CLOSE_FRIDAY_TIME, "%H:%M").time()
             if now.time() >= fc_time:
-                return False, f"Thứ 6 sau {config_real.FORCE_CLOSE_FRIDAY_TIME} – không vào lệnh mới"
+                return False, f"Thứ 6 sau {config.FORCE_CLOSE_FRIDAY_TIME} – không vào lệnh mới"
 
         # Kiểm tra phiên giờ
         now_time = now.time()
@@ -62,7 +62,7 @@ class SessionFilter:
             now = datetime.datetime.now()
         if now.weekday() != 4:
             return False
-        fc_time = datetime.datetime.strptime(config_real.FORCE_CLOSE_FRIDAY_TIME, "%H:%M").time()
+        fc_time = datetime.datetime.strptime(config.FORCE_CLOSE_FRIDAY_TIME, "%H:%M").time()
         return now.time() >= fc_time
 
 
@@ -100,7 +100,7 @@ class TrailingStopManager:
         Gọi mỗi nến mới. Cập nhật SL nếu đủ điều kiện.
         Returns: danh sách ticket đã được dịch SL.
         """
-        if not config_real.TRAILING_ENABLED:
+        if not config.TRAILING_ENABLED:
             return []
 
         updated = []
@@ -117,8 +117,8 @@ class TrailingStopManager:
 
             ptype    = state["position_type"]
             risk_pts = state["initial_risk_pts"]
-            trigger  = config_real.TRAILING_TRIGGER_RR * risk_pts * self.point
-            step_pts = config_real.TRAILING_STEP_POINTS * self.point
+            trigger  = config.TRAILING_TRIGGER_RR * risk_pts * self.point
+            step_pts = config.TRAILING_STEP_POINTS * self.point
 
             if ptype == mt5.ORDER_TYPE_BUY:
                 current_price   = tick.bid

@@ -1,75 +1,75 @@
 """
-config.py
-=========
-Tập trung toàn bộ tham số cấu hình V2.
+config.py  (V2.1)
+=================
+Tập trung toàn bộ tham số cấu hình.
 Chỉnh sửa file này để điều chỉnh bot mà không cần đụng vào code logic.
 """
+import core_config
 
 # ══════════════════════════════════════════════════════════════════
 # MT5 CREDENTIALS
 # ══════════════════════════════════════════════════════════════════
-MT5_USERNAME    = 123456789       # Số tài khoản MT5
-MT5_PASSWORD    = "your_password"
-MT5_SERVER      = "YourBroker-Server"
-MT5_SYMBOL      = "XAUUSD"
+MT5_USERNAME    = core_config.MT5_USERNAME
+MT5_PASSWORD    = core_config.MT5_PASSWORD
+MT5_SERVER      = core_config.MT5_SERVER
+MT5_SYMBOL      = core_config.MT5_SYMBOL
 
 # ══════════════════════════════════════════════════════════════════
 # AI / GEMINI
 # ══════════════════════════════════════════════════════════════════
-GEMINI_API_KEY  = "your_gemini_api_key"
-GEMINI_MODEL    = "gemini-2.0-flash"   # hoặc "gemini-1.5-pro" để chính xác hơn
+GEMINI_API_KEY  = core_config.GEMINI_API_KEY
+GEMINI_MODEL    = core_config.GEMINI_MODEL
 
 # ══════════════════════════════════════════════════════════════════
 # QUẢN LÝ VỐN
 # ══════════════════════════════════════════════════════════════════
-RISK_PERCENT    = 0.5      # % equity mỗi lệnh
-RR_RATIO        = 2.5      # Risk:Reward mặc định
-SPREADS         = 260      # Điểm buffer thêm vào SL (tránh bị quét bởi spread)
-MAGIC_NUMBER    = 20261606 # ID định danh lệnh của bot
+RISK_PERCENT    = 0.1
+RR_RATIO        = 2.5
+SPREADS         = 260
+MAGIC_NUMBER    = 20261606
 
 # ══════════════════════════════════════════════════════════════════
 # TRAILING STOP LOSS
 # ══════════════════════════════════════════════════════════════════
 TRAILING_ENABLED       = True
-TRAILING_TRIGGER_RR    = 1.0   # Kích hoạt trailing khi lời >= 1R
-TRAILING_STEP_POINTS   = 150   # Dịch SL mỗi 150 points khi giá đi thuận
+TRAILING_TRIGGER_RR    = 1.0
+TRAILING_STEP_POINTS   = 150
 
 # ══════════════════════════════════════════════════════════════════
-# BỘ LỌC PHIÊN GIAO DỊCH (UTC+7 - Giờ Việt Nam)
+# BỘ LỌC PHIÊN GIAO DỊCH (UTC+7 — Giờ Việt Nam local)
 # ══════════════════════════════════════════════════════════════════
-# Chỉ vào lệnh trong các khung giờ active để tránh low liquidity
 ALLOWED_SESSIONS = [
-    {"name": "London Open",   "start": "14:00", "end": "18:00"},
-    {"name": "NY Open",       "start": "19:30", "end": "23:30"},
-    {"name": "London-NY Overlap", "start": "19:00", "end": "22:00"},
+    {"name": "Asian",             "start": "08:00", "end": "12:00"},
+    {"name": "London Open",       "start": "14:00", "end": "17:00"},
+    {"name": "NY Open",           "start": "19:00", "end": "23:00"},
 ]
-
-# Ngày trong tuần được phép giao dịch (0=Thứ 2, 4=Thứ 6)
-ALLOWED_WEEKDAYS = [0, 1, 2, 3, 4]  # Thứ 2 → Thứ 6
-
-# Cắt lệnh cuối tuần: đóng lệnh vào Thứ 6 lúc 22:30 nếu vẫn đang mở
-FORCE_CLOSE_FRIDAY_TIME = "22:30"
+ALLOWED_WEEKDAYS        = [0, 1, 2, 3, 4]   # Thứ 2 → Thứ 6
+FORCE_CLOSE_FRIDAY_TIME = "22:30"            # Giờ local (UTC+7)
 
 # ══════════════════════════════════════════════════════════════════
 # DỮ LIỆU / PHÂN TÍCH
 # ══════════════════════════════════════════════════════════════════
-H1_FETCH_COUNT  = 700   # Số nến H1 để resample Daily (~29 ngày)
-H1_CHART_WINDOW = 60    # Số nến H1 hiển thị trên chart
-M5_CHART_WINDOW = 120   # Số nến M5 hiển thị trên chart
+H1_FETCH_COUNT  = 700    # ~29 ngày H1 để resample Daily đủ 22 nến
+H1_CHART_WINDOW = 60
+M5_CHART_WINDOW = 120
+DAILY_CANDLES   = 20
 
-DAILY_CANDLES   = 20    # Số nến Daily để phân tích (luôn 20)
-
-# ══════════════════════════════════════════════════════════════════
-# BACKTEST (chỉ dùng khi chạy backtester.py)
-# ══════════════════════════════════════════════════════════════════
-BACKTEST_CSV_PATH  = "data/XAUUSD_H1.csv"   # File CSV H1 lịch sử
-BACKTEST_START_IDX = 700                     # Index bắt đầu (đủ để resample Daily)
-BACKTEST_END_IDX   = None                    # None = đến hết file
-BACKTEST_STEP      = 1                       # Bước nhảy nến H1 (1 = mỗi nến)
+# Daily Bias chỉ được query lại tại các giờ này (GMT 0):
+# 0h, 4h, 8h, 12h — tức 4 lần/ngày, mỗi session giữ nguyên bias
+DAILY_BIAS_REFRESH_HOURS_GMT = (0, 4, 8, 12)
 
 # ══════════════════════════════════════════════════════════════════
-# LOGGING
+# BACKTEST
+# ══════════════════════════════════════════════════════════════════
+BACKTEST_CSV_PATH  = "data/XAUUSD_H1.csv"
+BACKTEST_START_IDX = 700
+BACKTEST_END_IDX   = None
+BACKTEST_STEP      = 1
+
+# ══════════════════════════════════════════════════════════════════
+# LOGGING & OUTPUT
 # ══════════════════════════════════════════════════════════════════
 LOG_FOLDER      = "data/logs"
 CHART_FOLDER    = "data/charts"
-SAVE_ALL_CHARTS = True   # False = chỉ lưu chart khi có lệnh (tiết kiệm disk)
+REPORT_FOLDER   = "data/reports"   # ← MỚI: thư mục chứa PDF báo cáo
+SAVE_ALL_CHARTS = True

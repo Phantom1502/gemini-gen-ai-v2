@@ -1,8 +1,9 @@
 """
-mt5util.py  (V2 - kế thừa V1, bổ sung get_multi_tf_data)
-==========================================================
-Mọi hàm từ v1 được giữ nguyên. Thêm:
-- get_multi_tf_data(): lấy Daily/H1/M5 cùng lúc cho pipeline ICT
+mt5util.py  (V2.1 - fix start_pos=0, daily resample offset 20h GMT)
+=====================================================================
+- Tất cả copy_rates_from_pos dùng start_pos=0 để lấy nến đang chạy
+- Resample Daily dùng '24H' offset='20h' để khớp chart OANDA (ngày bắt đầu 20:00 GMT)
+- get_multi_tf_data trả về cả nến hiện tại (chưa đóng)
 """
 
 import MetaTrader5 as mt5
@@ -12,10 +13,39 @@ import math
 import datetime
 
 
+# ═══════════════════════════════════════════════════════════════
+# HELPER: Resample H1 → Daily theo chuẩn OANDA (ngày bắt 20h GMT)
+# ═══════════════════════════════════════════════════════════════
+
+def resample_h1_to_daily_oanda(df_h1: pd.DataFrame, tail: int = 22) -> pd.DataFrame:
+    """
+    Resample H1 → Daily khớp với chart OANDA:
+      - Mỗi ngày bắt đầu lúc 20:00 GMT (Chủ nhật tối) và kết thúc 19:59 GMT ngày hôm sau
+      - offset='20h' để canh đúng ranh giới nến ngày
+      - label='right' → index của nến là thời điểm ĐÓNG (20h hôm sau)
+      - Bỏ qua nến chưa đủ dữ liệu (dropna)
+
+    Parameters
+    ----------
+    df_h1 : DataFrame H1 với DatetimeIndex UTC/GMT
+    tail  : số nến Daily cuối cần giữ lại (mặc định 22 để vẽ 20 nến + buffer)
+
+    Returns
+    -------
+    DataFrame Daily với cột Open/High/Low/Close
+    """
+    df_daily = (
+        df_h1.resample('24h', origin='start_day', offset='20h', label='right')
+        .agg({'Open': 'first', 'High': 'max', 'Low': 'min', 'Close': 'last'})
+        .dropna()
+    )
+    return df_daily.tail(tail)
+
+
 class MT5Util:
 
     # ══════════════════════════════════════════════
-    # KẾ THỪA NGUYÊN TỪ V1
+    # KẾT NỐI
     # ══════════════════════════════════════════════
 
     @staticmethod
@@ -43,8 +73,14 @@ class MT5Util:
         print(f"✅ [MT5] Kết nối thành công tài khoản {username} | Symbol: {symbol}")
         return True
 
+    # ══════════════════════════════════════════════
+    # LẤY DỮ LIỆU (start_pos=0 → bao gồm nến đang chạy)
+    # ══════════════════════════════════════════════
+
     @staticmethod
     def get_current_open_time(symbol: str, timeframe: int) -> int:
+        """Thời gian mở của nến M5 hiện tại (dùng để phát hiện nến mới)."""
+        # start_pos=0 → nến đang chạy
         rates = mt5.copy_rates_from_pos(symbol, timeframe, 0, 1)
         if rates is None or len(rates) == 0:
             raise RuntimeError(f"Không lấy được dữ liệu nến: {mt5.last_error()}")
@@ -61,18 +97,17 @@ class MT5Util:
 
     @staticmethod
     def get_historical_data(symbol: str, timeframe: int, count: int = 50) -> pd.DataFrame:
-        rates = mt5.copy_rates_from_pos(symbol, timeframe, 1, count)
+        """
+        Lấy dữ liệu lịch sử bao gồm nến đang chạy (start_pos=0).
+        """
+        rates = mt5.copy_rates_from_pos(symbol, timeframe, 0, count)
         if rates is None or len(rates) == 0:
             raise RuntimeError(f"Không lấy được dữ liệu lịch sử: {mt5.last_error()}")
-        df = pd.DataFrame(rates)
-        df['Datetime'] = pd.to_datetime(df['time'], unit='s')
-        df.set_index('Datetime', inplace=True)
-        df.rename(columns={'open': 'Open', 'high': 'High', 'low': 'Low',
-                            'close': 'Close', 'tick_volume': 'Volume'}, inplace=True)
-        return df[['Open', 'High', 'Low', 'Close', 'Volume']]
+        return MT5Util._rates_to_df(rates)
 
     @staticmethod
     def get_last_close_candle_info(symbol: str, timeframe: int) -> Dict[str, float]:
+        """Nến vừa đóng (start_pos=1 → bỏ nến đang chạy)."""
         rates = mt5.copy_rates_from_pos(symbol, timeframe, 1, 1)
         if rates is None or len(rates) == 0:
             raise RuntimeError(f"Không lấy được dữ liệu nến: {mt5.last_error()}")
@@ -84,6 +119,55 @@ class MT5Util:
             'time':  int(rates[0]['time'])
         }
 
+    # ══════════════════════════════════════════════
+    # MỚI V2.1: ĐA KHUNG THỜI GIAN (bao gồm nến đang chạy)
+    # ══════════════════════════════════════════════
+
+    @staticmethod
+    def get_multi_tf_data(
+        symbol: str,
+        h1_count: int  = 700,   # ~29 ngày H1 để resample Daily + buffer
+        h1_window: int = 60,    # số nến H1 gần nhất cho chart H1
+        m5_window: int = 120,   # số nến M5 gần nhất cho chart M5
+    ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+        """
+        Lấy dữ liệu 3 timeframe, bao gồm nến đang chạy (start_pos=0).
+
+        Returns
+        -------
+        df_daily  : nến Daily resample theo chuẩn OANDA (offset 20h GMT)
+        df_h1     : h1_window nến H1 gần nhất (kể cả nến đang chạy)
+        df_m5     : m5_window nến M5 gần nhất (kể cả nến đang chạy)
+        """
+        # ── H1 raw (start_pos=0 → lấy cả nến đang chạy) ──────────
+        rates_h1_raw = mt5.copy_rates_from_pos(symbol, mt5.TIMEFRAME_H1, 0, h1_count)
+        if rates_h1_raw is None or len(rates_h1_raw) == 0:
+            raise RuntimeError(f"Không lấy được dữ liệu H1: {mt5.last_error()}")
+        df_h1_raw = MT5Util._rates_to_df(rates_h1_raw)
+
+        # ── Resample → Daily (OANDA offset 20h GMT) ───────────────
+        df_daily = resample_h1_to_daily_oanda(df_h1_raw, tail=22)
+
+        # ── H1 window (nến gần nhất, kể cả đang chạy) ────────────
+        df_h1 = df_h1_raw.tail(h1_window)
+
+        # ── M5 (start_pos=0 → kể cả nến đang chạy) ───────────────
+        rates_m5 = mt5.copy_rates_from_pos(symbol, mt5.TIMEFRAME_M5, 0, m5_window)
+        if rates_m5 is None or len(rates_m5) == 0:
+            raise RuntimeError(f"Không lấy được dữ liệu M5: {mt5.last_error()}")
+        df_m5 = MT5Util._rates_to_df(rates_m5)
+
+        print(
+            f"📦 [MT5] Daily={len(df_daily)} nến | "
+            f"H1={len(df_h1)} nến | "
+            f"M5={len(df_m5)} nến (bao gồm nến đang chạy)"
+        )
+        return df_daily, df_h1, df_m5
+
+    # ══════════════════════════════════════════════
+    # QUẢN LÝ LỆNH
+    # ══════════════════════════════════════════════
+
     @staticmethod
     def open_position(
         symbol: str, lot: float, position_type: int,
@@ -92,13 +176,13 @@ class MT5Util:
     ) -> Optional[int]:
         symbol_info = mt5.symbol_info(symbol)
         if symbol_info is None:
-            print(f"❌ [ORDER] Không lấy được symbol info.")
+            print("❌ [ORDER] Không lấy được symbol info.")
             return None
 
         point     = symbol_info.point
         tick_info = mt5.symbol_info_tick(symbol)
         if tick_info is None:
-            print(f"❌ [ORDER] Không lấy được tick.")
+            print("❌ [ORDER] Không lấy được tick.")
             return None
 
         if position_type == mt5.ORDER_TYPE_BUY:
@@ -114,17 +198,17 @@ class MT5Util:
             return None
 
         request = {
-            "action":      mt5.TRADE_ACTION_DEAL,
-            "symbol":      symbol,
-            "volume":      float(lot),
-            "type":        position_type,
-            "price":       price,
-            "sl":          sl,
-            "tp":          tp,
-            "deviation":   deviation,
-            "magic":       magic_number,
-            "comment":     comment,
-            "type_time":   mt5.ORDER_TIME_GTC,
+            "action":       mt5.TRADE_ACTION_DEAL,
+            "symbol":       symbol,
+            "volume":       float(lot),
+            "type":         position_type,
+            "price":        price,
+            "sl":           sl,
+            "tp":           tp,
+            "deviation":    deviation,
+            "magic":        magic_number,
+            "comment":      comment,
+            "type_time":    mt5.ORDER_TIME_GTC,
             "type_filling": mt5.ORDER_FILLING_FOK,
         }
         print(f"📡 [ORDER] Type={position_type} | Price={price} | SL={sl} | TP={tp}")
@@ -190,53 +274,18 @@ class MT5Util:
         print("🔌 [MT5] Đã đóng kết nối.")
 
     # ══════════════════════════════════════════════
-    # MỚI V2: LẤY DỮ LIỆU ĐA KHUNG THỜI GIAN
+    # INTERNAL HELPER
     # ══════════════════════════════════════════════
 
     @staticmethod
-    def get_multi_tf_data(
-        symbol: str,
-        h1_count: int  = 600,   # ~25 ngày H1 để resample Daily
-        h1_window: int = 60,    # số nến H1 gần nhất cho chart H1
-        m5_window: int = 100,   # số nến M5 gần nhất cho chart M5
-    ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-        """
-        Lấy dữ liệu 3 timeframe cùng lúc từ MT5.
-
-        Returns
-        -------
-        df_daily  : 20 nến Daily cuối (resample từ H1)
-        df_h1     : h1_window nến H1 cuối (nến đã đóng)
-        df_m5     : m5_window nến M5 cuối (nến đã đóng)
-        """
-        def _to_df(rates) -> pd.DataFrame:
-            df = pd.DataFrame(rates)
-            df['Datetime'] = pd.to_datetime(df['time'], unit='s')
-            df.set_index('Datetime', inplace=True)
-            df.rename(columns={'open': 'Open', 'high': 'High', 'low': 'Low',
-                                'close': 'Close', 'tick_volume': 'Volume'}, inplace=True)
-            return df[['Open', 'High', 'Low', 'Close', 'Volume']]
-
-        # H1 raw để resample Daily
-        rates_h1_raw = mt5.copy_rates_from_pos(symbol, mt5.TIMEFRAME_H1, 1, h1_count)
-        if rates_h1_raw is None or len(rates_h1_raw) == 0:
-            raise RuntimeError(f"Không lấy được dữ liệu H1: {mt5.last_error()}")
-        df_h1_raw = _to_df(rates_h1_raw)
-
-        # Resample → Daily 20 nến
-        df_daily_raw = df_h1_raw.resample('D').agg(
-            {'Open': 'first', 'High': 'max', 'Low': 'min', 'Close': 'last'}
-        ).dropna()
-        df_daily = df_daily_raw.tail(20)
-
-        # H1 window (nến đã đóng)
-        df_h1 = df_h1_raw.tail(h1_window)
-
-        # M5 (nến đã đóng, start_pos=1 để bỏ nến đang chạy)
-        rates_m5 = mt5.copy_rates_from_pos(symbol, mt5.TIMEFRAME_M5, 1, m5_window)
-        if rates_m5 is None or len(rates_m5) == 0:
-            raise RuntimeError(f"Không lấy được dữ liệu M5: {mt5.last_error()}")
-        df_m5 = _to_df(rates_m5)
-
-        print(f"📦 [MT5] Daily={len(df_daily)} nến | H1={len(df_h1)} nến | M5={len(df_m5)} nến")
-        return df_daily, df_h1, df_m5
+    def _rates_to_df(rates) -> pd.DataFrame:
+        df = pd.DataFrame(rates)
+        df['Datetime'] = pd.to_datetime(df['time'], unit='s')
+        df.set_index('Datetime', inplace=True)
+        df.rename(columns={
+            'open': 'Open', 'high': 'High',
+            'low': 'Low', 'close': 'Close',
+            'tick_volume': 'Volume'
+        }, inplace=True)
+        cols = ['Open', 'High', 'Low', 'Close', 'Volume']
+        return df[[c for c in cols if c in df.columns]]
