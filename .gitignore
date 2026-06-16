@@ -1,0 +1,5 @@
+src/__pycache__/
+data/charts/
+data/prompts/
+src/utils/__pycache__/
+data/logs/

@@ -1,0 +1,7 @@
+numpy
+pandas
+matplotlib
+google-genai
+mplfinance
+MetaTrader5
+scipy
