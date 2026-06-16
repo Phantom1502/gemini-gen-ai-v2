@@ -4,6 +4,7 @@ config.py  (V2.1)
 Tập trung toàn bộ tham số cấu hình.
 Chỉnh sửa file này để điều chỉnh bot mà không cần đụng vào code logic.
 """
+
 import core_config
 
 # ══════════════════════════════════════════════════════════════════
@@ -17,31 +18,34 @@ MT5_SYMBOL      = core_config.MT5_SYMBOL
 # ══════════════════════════════════════════════════════════════════
 # AI / GEMINI
 # ══════════════════════════════════════════════════════════════════
-GEMINI_API_KEY  = core_config.GEMINI_API_KEY
-GEMINI_MODEL    = core_config.GEMINI_MODEL
+GEMINI_API_KEY  = core_config.GEMINI_API_KEY    
+GEMINI_MODEL    = core_config.GEMINI_MODEL        # "gemini-2.0-flash" hoặc "gemini-1.5-pro"
 
 # ══════════════════════════════════════════════════════════════════
 # QUẢN LÝ VỐN
 # ══════════════════════════════════════════════════════════════════
-RISK_PERCENT    = 0.1
+RISK_PERCENT    = 0.2
 RR_RATIO        = 2.5
 SPREADS         = 260
 MAGIC_NUMBER    = 20261606
 
-# ══════════════════════════════════════════════════════════════════
-# TRAILING STOP LOSS
-# ══════════════════════════════════════════════════════════════════
-TRAILING_ENABLED       = True
-TRAILING_TRIGGER_RR    = 1.0
+# ══════════════════════════════════════════════════════════════
+# QUẢN LÝ LỆNH (TradeManager — partial close + BE + optional trailing)
+# ══════════════════════════════════════════════════════════════
+# Partial close 50% khi giá đạt half_target (midpoint entry→TP)
+# Sau đó SL tự động dời về Breakeven + BE_BUFFER_POINTS
+
+BE_BUFFER_POINTS       = 50    # points buffer sau entry để tránh bị quét ngay
+TRAILING_ENABLED       = False # Tắt mặc định — partial close đã đủ
 TRAILING_STEP_POINTS   = 150
 
 # ══════════════════════════════════════════════════════════════════
 # BỘ LỌC PHIÊN GIAO DỊCH (UTC+7 — Giờ Việt Nam local)
 # ══════════════════════════════════════════════════════════════════
 ALLOWED_SESSIONS = [
-    {"name": "Asian",             "start": "08:00", "end": "12:00"},
-    {"name": "London Open",       "start": "14:00", "end": "17:00"},
-    {"name": "NY Open",           "start": "19:00", "end": "23:00"},
+    {"name": "London Open",       "start": "14:00", "end": "18:00"},
+    {"name": "NY Open",           "start": "19:30", "end": "23:30"},
+    {"name": "London-NY Overlap", "start": "19:00", "end": "22:00"},
 ]
 ALLOWED_WEEKDAYS        = [0, 1, 2, 3, 4]   # Thứ 2 → Thứ 6
 FORCE_CLOSE_FRIDAY_TIME = "22:30"            # Giờ local (UTC+7)

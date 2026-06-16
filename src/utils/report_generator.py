@@ -242,14 +242,14 @@ def generate_session_report(
     pdf.section_title("2. STAGE 1 — DAILY BIAS")
 
     if daily_result:
-        pdf.colored_badge("Daily Bias",  daily_result.get("daily_bias", "—"))
-        pdf.colored_badge("Confidence",  daily_result.get("confidence_score", "—"))
-        pdf.kv_row("Market State",       daily_result.get("current_market_state", "—"))
-        pdf.kv_row("Draw on Liquidity",  daily_result.get("draw_on_liquidity", "—"))
-
-        ltf = daily_result.get("ltf_execution_context") or {}
-        pdf.kv_row("LTF Scenario",       ltf.get("primary_scenario", "—"))
-        pdf.kv_row("Invalidation",       ltf.get("invalidation_level", "—"))
+        dol = daily_result.get("draw_on_liquidity") or {}
+        pdf.colored_badge("Daily Bias",   daily_result.get("bias", "—"))
+        pdf.colored_badge("Confidence",   daily_result.get("confidence", "—"))
+        pdf.kv_row("Market State",        daily_result.get("market_state", "—"))
+        pdf.kv_row("Draw on Liquidity",   f"{dol.get('label','—')} @ {dol.get('price','—')}")
+        pdf.kv_row("DOL Reason",          dol.get("reason", "—"))
+        pdf.kv_row("HTF Invalidation",    daily_result.get("htf_invalidation", "—"))
+        pdf.kv_row("LTF Guidance",        daily_result.get("ltf_guidance", "—"))
     else:
         pdf.set_font(fn, "I", 9)
         pdf.set_text_color(239, 83, 80)
@@ -282,10 +282,16 @@ def generate_session_report(
     pdf.section_title("3. STAGE 2 — H1 STRUCTURE")
 
     if h1_result:
-        pdf.colored_badge("H1 Trend",    h1_result.get("h1_trend", "—"))
-        pdf.colored_badge("Confidence",  h1_result.get("confidence_score", "—"))
-        pdf.kv_row("Key POI",            h1_result.get("key_poi", "—"))
-        pdf.kv_row("H1 Scenario",        h1_result.get("h1_scenario", "—"))
+        ez = h1_result.get("entry_zone") or {}
+        pdf.colored_badge("H1 Direction", h1_result.get("direction", "—"))
+        pdf.colored_badge("Confidence",   h1_result.get("confidence", "—"))
+        pdf.kv_row("H1 Structure",        h1_result.get("h1_structure", "—"))
+        pdf.kv_row("Entry Zone",
+                   f"{ez.get('zone_type','—')} [{ez.get('price_bot','—')} – {ez.get('price_top','—')}]")
+        pdf.kv_row("Zone Detail",         ez.get("description", "—"))
+        pdf.kv_row("Target (TP)",         h1_result.get("target", "—"))
+        pdf.kv_row("Invalidation",        h1_result.get("invalidation", "—"))
+        pdf.kv_row("Scenario Note",       h1_result.get("scenario_note", "—"))
     else:
         pdf.set_font(fn, "I", 9); pdf.set_text_color(239, 83, 80)
         pdf.cell(0, 7, "  ✗ Stage 2 không có kết quả.", ln=True)
@@ -314,12 +320,14 @@ def generate_session_report(
     pdf.section_title("4. STAGE 3 — M5 ENTRY")
 
     if m5_result:
-        pdf.colored_badge("Action",      m5_result.get("action", "—"))
-        pdf.colored_badge("Confidence",  m5_result.get("confidence_score", "—"))
-        pdf.kv_row("Entry Zone",         m5_result.get("entry_zone", "—"))
-        pdf.kv_row("SL Reference",       m5_result.get("sl_reference", "—"))
-        pdf.kv_row("TP Reference",       m5_result.get("tp_reference", "—"))
-        pdf.kv_row("Geometry Reason",    m5_result.get("geometry_reason", "—"))
+        pdf.colored_badge("Action",       m5_result.get("action", "—"))
+        pdf.colored_badge("Confidence",   m5_result.get("confidence", "—"))
+        pdf.kv_row("Entry Trigger",       m5_result.get("entry_trigger", "—"))
+        pdf.kv_row("SL Reference",        m5_result.get("sl_reference", "—"))
+        pdf.kv_row("TP Reference",        m5_result.get("tp_reference", "—"))
+        pdf.kv_row("Geometry Reason",     m5_result.get("geometry_reason", "—"))
+        if m5_result.get("hold_reason") and m5_result.get("hold_reason") != "N/A":
+            pdf.kv_row("Hold Reason",     m5_result.get("hold_reason", "—"))
     else:
         pdf.set_font(fn, "I", 9); pdf.set_text_color(239, 83, 80)
         pdf.cell(0, 7, "  ✗ Stage 3 không có kết quả.", ln=True)

@@ -268,6 +268,61 @@ class MT5Util:
                 result = "WIN"
         return {"profit": round(profit, 2), "result": result}
 
+
+    @staticmethod
+    def open_position_with_tp(
+        symbol:       str,
+        lot:          float,
+        position_type: int,
+        sl_price:     float,        # SL giá thực (đã tính sẵn)
+        tp_price:     float,        # TP giá thực từ H1 target (không fix RR)
+        magic_number: int  = 0,
+        deviation:    int  = 20,
+        comment:      str  = "",
+    ) -> Optional[int]:
+        """
+        Mở lệnh với SL và TP là giá thực (không tính từ RR cố định).
+        Dùng cho phương pháp ICT pullback — TP lấy từ H1TradingContext.target.
+        """
+        sym_info  = mt5.symbol_info(symbol)
+        tick_info = mt5.symbol_info_tick(symbol)
+        if sym_info is None or tick_info is None:
+            print("❌ [ORDER] Không lấy được symbol/tick info.")
+            return None
+
+        if position_type == mt5.ORDER_TYPE_BUY:
+            price = tick_info.ask
+        elif position_type == mt5.ORDER_TYPE_SELL:
+            price = tick_info.bid
+        else:
+            print(f"❌ [ORDER] Loại lệnh không hợp lệ: {position_type}")
+            return None
+
+        request = {
+            "action":       mt5.TRADE_ACTION_DEAL,
+            "symbol":       symbol,
+            "volume":       float(lot),
+            "type":         position_type,
+            "price":        price,
+            "sl":           sl_price,
+            "tp":           tp_price,
+            "deviation":    deviation,
+            "magic":        magic_number,
+            "comment":      comment,
+            "type_time":    mt5.ORDER_TIME_GTC,
+            "type_filling": mt5.ORDER_FILLING_FOK,
+        }
+        print(f"📡 [ORDER] {('BUY' if position_type==mt5.ORDER_TYPE_BUY else 'SELL')} "
+              f"| Price={price} | SL={sl_price} | TP={tp_price} | Lot={lot}")
+        result = mt5.order_send(request)
+        if result is None or result.retcode != mt5.TRADE_RETCODE_DONE:
+            code = result.retcode if result else "N/A"
+            msg  = result.comment if result else "No response"
+            print(f"❌ [ORDER FAILED] Retcode={code}: {msg}")
+            return None
+        print(f"🚀 [ORDER OK] Ticket={result.order}")
+        return result.order
+
     @staticmethod
     def disconnect() -> None:
         mt5.shutdown()

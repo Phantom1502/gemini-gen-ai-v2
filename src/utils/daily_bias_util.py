@@ -100,7 +100,7 @@ class DailyBiasUtil:
         if total_candles == 0:
             raise ValueError("DataFrame trống.")
 
-        yesterday_idx        = total_candles - 1
+        yesterday_idx        = total_candles - 2 # Nến cuối là nến hiện tại, nến hôm qua là -2
         yesterday            = df.iloc[yesterday_idx]
         pdh_price            = float(yesterday['High'])
         pdl_price            = float(yesterday['Low'])

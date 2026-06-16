@@ -30,7 +30,7 @@ from utils.daily_bias_util   import DailyBiasUtil
 from utils.h1_structure_util import H1StructureUtil
 from utils.m5_entry_util     import M5EntryUtil
 from utils.ict_ai_agent      import ICTAIAgent
-from utils.session_filter    import SessionFilter, TrailingStopManager
+from utils.trade_manager     import SessionFilter, TradeManager
 from utils.report_generator  import generate_session_report, build_report_path
 
 
@@ -76,7 +76,7 @@ class Trader:
 
         self.agent            = ICTAIAgent(api_key=api_key, model_name=model_name)
         self.session_filter   = SessionFilter()
-        self.trailing_manager = TrailingStopManager(symbol)
+        self.trade_manager    = TradeManager(symbol)
 
         self.chart_folder  = config.CHART_FOLDER
         self.log_folder    = config.LOG_FOLDER
@@ -135,15 +135,15 @@ class Trader:
                 # ── Force close Thứ 6 ─────────────────────────
                 if SessionFilter.should_force_close_friday(now_loc):
                     print("📅 [THỨ 6] Qua giờ force-close. Đóng tất cả lệnh...")
-                    self.trailing_manager.force_close_all()
+                    self.trade_manager.force_close_all()
                     self._check_and_log_previous_trade()
                     time.sleep(10)
                     continue
 
                 # ── Trailing SL ───────────────────────────────
-                updated = self.trailing_manager.update()
-                if updated:
-                    print(f"🔄 [TRAIL] Cập nhật SL cho {len(updated)} lệnh: {updated}")
+                acted = self.trade_manager.update()
+                if acted:
+                    print(f"🔄 [TM] Xử lý {len(acted)} lệnh: {acted}")
 
                 # ── Kiểm tra lệnh cũ ──────────────────────────
                 self._check_and_log_previous_trade()
@@ -185,24 +185,53 @@ class Trader:
                     self._generate_report(pipeline, now_utc, trade_info=None)
                     continue
 
-                # ── Tính SL ───────────────────────────────────
-                prev_m5  = MT5Util.get_last_close_candle_info(self.symbol, timeframe)
-                sym_info = mt5.symbol_info(self.symbol)
-                point    = sym_info.point
-                digits   = sym_info.digits
+                # ── Tính SL (pullback method — từ swing M5) ───────────
+                #
+                # Phương pháp pullback: entry tại FVG/OB sau CHoCH.
+                # SL đặt dưới swing low gần nhất (BUY) hoặc
+                #          trên swing high gần nhất (SELL),
+                # cộng buffer spread để tránh bị quét nhiễu.
+                # Giá trị swing được tính sẵn trong m5_payload bởi
+                # M5EntryUtil.find_sl_swing() — chỉ dùng nến đã đóng.
+                #
+                sym_info   = mt5.symbol_info(self.symbol)
+                point      = sym_info.point
+                digits     = sym_info.digits
+                m5_payload = pipeline.get("m5_payload", {})
 
                 if action == "BUY":
                     position_type = mt5.ORDER_TYPE_BUY
                     tick_price    = mt5.symbol_info_tick(self.symbol).ask
-                    sl_price      = round(prev_m5['low'] - self.spreads * point, digits)
-                    sl_pts        = (tick_price - sl_price) / point
-                else:
+
+                    swing_sl = m5_payload.get("swing_low_for_sl")
+                    if swing_sl:
+                        # SL = swing low M5 − buffer spread
+                        sl_price = round(swing_sl - self.spreads * point, digits)
+                    else:
+                        # fallback: nến vừa đóng nếu không tìm được swing
+                        prev_m5  = MT5Util.get_last_close_candle_info(self.symbol, timeframe)
+                        sl_price = round(prev_m5['low'] - self.spreads * point, digits)
+                        print("⚠️  [SL] Không tìm được swing low M5, dùng low nến trước.")
+
+                    sl_pts = (tick_price - sl_price) / point
+
+                else:  # SELL
                     position_type = mt5.ORDER_TYPE_SELL
                     tick_price    = mt5.symbol_info_tick(self.symbol).bid
-                    sl_price      = round(prev_m5['high'] + self.spreads * point, digits)
-                    sl_pts        = (sl_price - tick_price) / point
+
+                    swing_sl = m5_payload.get("swing_high_for_sl")
+                    if swing_sl:
+                        # SL = swing high M5 + buffer spread
+                        sl_price = round(swing_sl + self.spreads * point, digits)
+                    else:
+                        prev_m5  = MT5Util.get_last_close_candle_info(self.symbol, timeframe)
+                        sl_price = round(prev_m5['high'] + self.spreads * point, digits)
+                        print("⚠️  [SL] Không tìm được swing high M5, dùng high nến trước.")
+
+                    sl_pts = (sl_price - tick_price) / point
 
                 sl_pts = max(sl_pts, 50)
+                print(f"📏 [SL] swing_sl={swing_sl} → sl_price={sl_price} → sl_pts={sl_pts:.1f}")
 
                 account      = mt5.account_info()
                 equity       = account.equity
@@ -215,17 +244,34 @@ class Trader:
                 )
 
                 lot = MT5Util.calculate_volume_by_cash(self.symbol, sl_pts, final_risk)
-                ticket = MT5Util.open_position(
-                    self.symbol, lot, position_type, sl_pts,
-                    rr=self.rr, magic_number=self.magic_number,
+
+                # ── Tính TP từ H1TradingContext (không fix RR) ────────
+                # h1_result.target là mức giá BSL/SSL thực tế từ H1
+                tp_price = self._parse_tp_price(
+                    pipeline.get("stage2_h1", {}).get("target", ""),
+                    tick_price, action, sl_pts, point, digits
+                )
+                # Tính RR thực tế để log
+                tp_distance = abs(tp_price - tick_price)
+                actual_rr   = round(tp_distance / (sl_pts * point), 2) if sl_pts > 0 else "?"
+                print(f"🎯 [TP] tp_price={tp_price} | Actual RR≈{actual_rr}R")
+
+                # Truyền tp_price vào open_position (không dùng rr cố định)
+                ticket = MT5Util.open_position_with_tp(
+                    self.symbol, lot, position_type,
+                    sl_price=sl_price, tp_price=tp_price,
+                    magic_number=self.magic_number,
                     comment=f"ICT_V2_{action}"
                 )
 
                 if ticket:
-                    self.trailing_manager.register_trade(
-                        ticket=ticket, open_price=tick_price,
-                        initial_sl=sl_price, initial_risk_pts=sl_pts,
+                    self.trade_manager.register(
+                        ticket=ticket,
+                        open_price=tick_price,
+                        tp_price=tp_price,
+                        sl_price=sl_price,
                         position_type=position_type,
+                        volume=lot,
                     )
                     trade_info_dict = {
                         "action":   action,
@@ -233,7 +279,8 @@ class Trader:
                         "lot":      lot,
                         "sl_pts":   round(sl_pts, 1),
                         "risk_usd": round(final_risk, 2),
-                        "tp":       pipeline.get("stage3_m5", {}).get("tp_reference", "—"),
+                        "tp":       tp_price,
+                        "actual_rr": actual_rr,
                         "result":   "PENDING",
                         "profit":   "PENDING",
                     }
@@ -317,10 +364,11 @@ class Trader:
                 "daily_img":    daily_img,
             })
 
-            daily_bias = daily_result.get("daily_bias", "NEUTRAL")
+            daily_bias = daily_result.get("bias", "NEUTRAL")
+            dol_info = (daily_result.get("draw_on_liquidity") or {})
             print(f"📊 [DAILY NEW] Bias={daily_bias} | "
-                  f"Confidence={daily_result.get('confidence_score')} | "
-                  f"DOL={daily_result.get('draw_on_liquidity')}")
+                  f"Confidence={daily_result.get('confidence')} | "
+                  f"DOL={dol_info.get('label','?')} @ {dol_info.get('price','?')}")
 
             # Khi Daily Bias mới → invalidate H1 cache để buộc refresh
             self._h1_cache["hour_key"] = None
@@ -329,7 +377,7 @@ class Trader:
             daily_result  = self._daily_cache["daily_result"]
             daily_payload = self._daily_cache["daily_payload"]
             daily_img     = self._daily_cache["daily_img"]
-            daily_bias    = daily_result.get("daily_bias", "NEUTRAL")
+            daily_bias    = daily_result.get("bias", "NEUTRAL")
             print(f"♻️  [DAILY CACHE] Bias={daily_bias} | trigger={trigger_hour:02d}h GMT")
 
         # ══════════════════════════════════════════════
@@ -340,7 +388,7 @@ class Trader:
             try:
                 h1_img, h1_payload = H1StructureUtil.generate_h1_chart(
                     df_h1,
-                    daily_bias=daily_bias,
+                    daily_bias=daily_bias,      # string vẫn dùng để vẽ label
                     daily_payload=daily_payload,
                     folder=self.chart_folder,
                 )
@@ -353,7 +401,7 @@ class Trader:
             h1_payload['pdh'] = daily_payload['yesterday_anchors']['PDH']
             h1_payload['pdl'] = daily_payload['yesterday_anchors']['PDL']
 
-            h1_result = self.agent.analyze_h1(h1_img, daily_bias, h1_payload)
+            h1_result = self.agent.analyze_h1(h1_img, h1_payload, daily_result)
             if not h1_result:
                 return {**EMPTY, "stage1_daily": daily_result,
                         "daily_img": daily_img}
@@ -366,24 +414,25 @@ class Trader:
                 "h1_img":    h1_img,
             })
 
-            print(f"📊 [H1 NEW] Trend={h1_result.get('h1_trend')} | "
-                  f"POI={h1_result.get('key_poi')} | "
-                  f"Confidence={h1_result.get('confidence_score')}")
+            print(f"📊 [H1 NEW] Direction={h1_result.get('direction')} | "
+                  f"Zone={((h1_result.get('entry_zone') or {}).get('zone_type','?'))} | "
+                  f"Confidence={h1_result.get('confidence')}")
         else:
             h1_result  = self._h1_cache["h1_result"]
             h1_payload = self._h1_cache["h1_payload"]
             h1_img     = self._h1_cache["h1_img"]
-            print(f"♻️  [H1 CACHE] Trend={h1_result.get('h1_trend')} | "
+            print(f"♻️  [H1 CACHE] Direction={h1_result.get('direction')} | "
                   f"{now_utc.strftime('%H:%M')} GMT")
 
         # ══════════════════════════════════════════════
         # STAGE 3: M5 ENTRY (mỗi nến M5)
         # ══════════════════════════════════════════════
+        # h1_result là H1TradingContext — truyền thẳng vào M5
+        # M5 KHÔNG nhận daily_bias, không nhận h1_payload số
         try:
             m5_img, m5_payload = M5EntryUtil.generate_m5_chart(
                 df_m5,
-                daily_bias=daily_bias,
-                h1_payload=h1_payload,
+                h1_context=h1_result,
                 folder=self.chart_folder,
             )
         except Exception as e:
@@ -395,7 +444,8 @@ class Trader:
                 "daily_payload": daily_payload, "h1_payload": h1_payload,
             }
 
-        m5_result = self.agent.analyze_m5(m5_img, daily_bias, h1_result, m5_payload)
+        # analyze_m5: chỉ nhận h1_context — không có daily_bias
+        m5_result = self.agent.analyze_m5(m5_img, m5_payload, h1_result)
         if not m5_result:
             return {
                 **EMPTY,
@@ -405,9 +455,11 @@ class Trader:
             }
 
         print(f"🎯 [M5] Action={m5_result.get('action')} | "
-              f"Confidence={m5_result.get('confidence_score')}")
-        print(f"   Entry: {m5_result.get('entry_zone')}")
-        print(f"   Reason: {m5_result.get('geometry_reason')}")
+              f"Confidence={m5_result.get('confidence')}")
+        print(f"   Trigger  : {m5_result.get('entry_trigger')}")
+        print(f"   Geometry : {m5_result.get('geometry_reason')}")
+        if m5_result.get('action') == 'HOLD':
+            print(f"   Hold why : {m5_result.get('hold_reason')}")
 
         return {
             "final_action":  m5_result.get("action", "HOLD"),
@@ -423,6 +475,51 @@ class Trader:
             "m5_payload":    m5_payload,
             "trigger_hour":  trigger_hour,
         }
+
+
+    # ══════════════════════════════════════════════════════════════
+    # PARSE TP PRICE từ H1 target string
+    # ══════════════════════════════════════════════════════════════
+
+    def _parse_tp_price(
+        self,
+        target_str: str,
+        entry_price: float,
+        action: str,
+        sl_pts: float,
+        point: float,
+        digits: int,
+        min_rr: float = 1.5,
+    ) -> float:
+        """
+        Trích xuất giá TP thực tế từ chuỗi H1TradingContext.target.
+        Ví dụ target_str: "BSL tại 2345.50 — đỉnh swing H1 gần nhất"
+                          "SSL tại 2298.00"
+                          "4350"
+
+        Nếu không parse được → fallback sang min_rr * sl_pts (tối thiểu 1.5R).
+        """
+        import re
+        # Tìm số thập phân trong chuỗi (có thể có dấu chấm hoặc phẩy)
+        nums = re.findall(r'\d{3,6}(?:[.,]\d{1,2})?', target_str or "")
+        if nums:
+            for n in nums:
+                try:
+                    price = float(n.replace(',', '.'))
+                    # Sanity check: TP phải ở đúng phía so với entry
+                    if action == 'BUY'  and price > entry_price:
+                        return round(price, digits)
+                    if action == 'SELL' and price < entry_price:
+                        return round(price, digits)
+                except ValueError:
+                    continue
+
+        # Fallback: min_rr × SL distance
+        print(f"⚠️  [TP] Không parse được giá từ '{target_str}', dùng fallback {min_rr}R")
+        if action == 'BUY':
+            return round(entry_price + sl_pts * point * min_rr, digits)
+        else:
+            return round(entry_price - sl_pts * point * min_rr, digits)
 
     # ══════════════════════════════════════════════════════════════
     # PDF REPORT
@@ -485,7 +582,7 @@ class Trader:
             self.active_trade_log["Trade_Result"]    = result["result"]
 
             self._write_to_csv(self.active_trade_log)
-            self.trailing_manager.unregister(ticket)
+            self.trade_manager.unregister(ticket)
             self.active_trade_log = None
         else:
             pos = positions[0]
@@ -516,10 +613,12 @@ class Trader:
         ticket, sl_pts, risk_usd, lot, profit, result
     ) -> dict:
         now     = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        # V2.2 schemas: DailyBiasContext / H1TradingContext / M5EntryResult
         daily_r = pipeline.get("stage1_daily") or {}
         h1_r    = pipeline.get("stage2_h1")    or {}
         m5_r    = pipeline.get("stage3_m5")    or {}
-        ltf     = daily_r.get("ltf_execution_context") or {}
+        dol     = daily_r.get("draw_on_liquidity") or {}
+        h1_ez   = h1_r.get("entry_zone") or {}
 
         return {
             "Open_Timestamp":    now,
@@ -528,24 +627,30 @@ class Trader:
             "Action":            action,
             "Daily_Trigger_H":   pipeline.get("trigger_hour", "—"),
 
-            "Daily_Bias":              daily_r.get("daily_bias", ""),
-            "Daily_Confidence":        daily_r.get("confidence_score", ""),
-            "Daily_Market_State":      daily_r.get("current_market_state", ""),
-            "Daily_DOL":               daily_r.get("draw_on_liquidity", ""),
-            "Daily_LTF_Scenario":      ltf.get("primary_scenario", ""),
-            "Daily_Invalidation":      ltf.get("invalidation_level", ""),
+            # DailyBiasContext fields
+            "Daily_Bias":          daily_r.get("bias", ""),
+            "Daily_Confidence":    daily_r.get("confidence", ""),
+            "Daily_Market_State":  daily_r.get("market_state", ""),
+            "Daily_DOL":           f"{dol.get('label','')} @ {dol.get('price','')}",
+            "Daily_HTF_Invalid":   daily_r.get("htf_invalidation", ""),
+            "Daily_LTF_Guidance":  daily_r.get("ltf_guidance", ""),
 
-            "H1_Trend":          h1_r.get("h1_trend", ""),
-            "H1_Confidence":     h1_r.get("confidence_score", ""),
-            "H1_POI":            h1_r.get("key_poi", ""),
-            "H1_Scenario":       h1_r.get("h1_scenario", ""),
+            # H1TradingContext fields
+            "H1_Direction":        h1_r.get("direction", ""),
+            "H1_Confidence":       h1_r.get("confidence", ""),
+            "H1_Structure":        h1_r.get("h1_structure", ""),
+            "H1_EntryZone":        f"{h1_ez.get('zone_type','')} [{h1_ez.get('price_bot','')}–{h1_ez.get('price_top','')}]",
+            "H1_Target":           h1_r.get("target", ""),
+            "H1_Invalidation":     h1_r.get("invalidation", ""),
 
-            "M5_Action":         m5_r.get("action", ""),
-            "M5_Confidence":     m5_r.get("confidence_score", ""),
-            "M5_Entry_Zone":     m5_r.get("entry_zone", ""),
-            "M5_SL_Ref":         m5_r.get("sl_reference", ""),
-            "M5_TP_Ref":         m5_r.get("tp_reference", ""),
-            "M5_Geometry_Reason":m5_r.get("geometry_reason", ""),
+            # M5EntryResult fields
+            "M5_Action":           m5_r.get("action", ""),
+            "M5_Confidence":       m5_r.get("confidence", ""),
+            "M5_Entry_Trigger":    m5_r.get("entry_trigger", ""),
+            "M5_SL_Ref":           m5_r.get("sl_reference", ""),
+            "M5_TP_Ref":           m5_r.get("tp_reference", ""),
+            "M5_Geometry_Reason":  m5_r.get("geometry_reason", ""),
+            "M5_Hold_Reason":      m5_r.get("hold_reason", ""),
 
             "SL_Points":         sl_pts,
             "Risk_USD":          risk_usd,
