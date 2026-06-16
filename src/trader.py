@@ -16,7 +16,7 @@ import datetime
 import pandas as pd
 from typing import Optional
 
-import config
+import src.config_real as config_real
 from utils.mt5util           import MT5Util
 from utils.daily_bias_util   import DailyBiasUtil
 from utils.h1_structure_util import H1StructureUtil
@@ -28,16 +28,16 @@ from utils.session_filter    import SessionFilter, TrailingStopManager
 class Trader:
     def __init__(
         self,
-        username:     int   = config.MT5_USERNAME,
-        password:     str   = config.MT5_PASSWORD,
-        server:       str   = config.MT5_SERVER,
-        symbol:       str   = config.MT5_SYMBOL,
-        risk_percent: float = config.RISK_PERCENT,
-        rr:           float = config.RR_RATIO,
-        spreads:      int   = config.SPREADS,
-        magic_number: int   = config.MAGIC_NUMBER,
-        api_key:      str   = config.GEMINI_API_KEY,
-        model_name:   str   = config.GEMINI_MODEL,
+        username:     int   = config_real.MT5_USERNAME,
+        password:     str   = config_real.MT5_PASSWORD,
+        server:       str   = config_real.MT5_SERVER,
+        symbol:       str   = config_real.MT5_SYMBOL,
+        risk_percent: float = config_real.RISK_PERCENT,
+        rr:           float = config_real.RR_RATIO,
+        spreads:      int   = config_real.SPREADS,
+        magic_number: int   = config_real.MAGIC_NUMBER,
+        api_key:      str   = config_real.GEMINI_API_KEY,
+        model_name:   str   = config_real.GEMINI_MODEL,
     ):
         self.symbol       = symbol
         self.risk_percent = risk_percent
@@ -56,8 +56,8 @@ class Trader:
         self.trailing_manager = TrailingStopManager(symbol)
 
         # ── Thư mục output ──────────────────────────────────────
-        self.chart_folder = config.CHART_FOLDER
-        self.log_folder   = config.LOG_FOLDER
+        self.chart_folder = config_real.CHART_FOLDER
+        self.log_folder   = config_real.LOG_FOLDER
         os.makedirs(self.chart_folder, exist_ok=True)
         os.makedirs(self.log_folder,   exist_ok=True)
 
@@ -230,9 +230,9 @@ class Trader:
         try:
             df_daily, df_h1, df_m5 = MT5Util.get_multi_tf_data(
                 self.symbol,
-                h1_count=config.H1_FETCH_COUNT,
-                h1_window=config.H1_CHART_WINDOW,
-                m5_window=config.M5_CHART_WINDOW,
+                h1_count=config_real.H1_FETCH_COUNT,
+                h1_window=config_real.H1_CHART_WINDOW,
+                m5_window=config_real.M5_CHART_WINDOW,
             )
         except Exception as e:
             print(f"❌ [DATA] Lỗi lấy dữ liệu MT5: {e}")

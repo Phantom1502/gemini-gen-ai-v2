@@ -15,7 +15,7 @@ import os
 # Thêm src vào path để import module
 sys.path.insert(0, os.path.dirname(__file__))
 
-import config
+import src.config_real as config_real
 from trader import Trader
 import MetaTrader5 as mt5
 
@@ -38,32 +38,32 @@ def run_dry_run():
 
     # Kết nối MT5
     MT5Util.init_mt5(
-        config.MT5_USERNAME,
-        config.MT5_PASSWORD,
-        config.MT5_SERVER,
-        config.MT5_SYMBOL
+        config_real.MT5_USERNAME,
+        config_real.MT5_PASSWORD,
+        config_real.MT5_SERVER,
+        config_real.MT5_SYMBOL
     )
 
     # Lấy dữ liệu
     df_daily, df_h1, df_m5 = MT5Util.get_multi_tf_data(
-        config.MT5_SYMBOL,
-        h1_count=config.H1_FETCH_COUNT,
-        h1_window=config.H1_CHART_WINDOW,
-        m5_window=config.M5_CHART_WINDOW,
+        config_real.MT5_SYMBOL,
+        h1_count=config_real.H1_FETCH_COUNT,
+        h1_window=config_real.H1_CHART_WINDOW,
+        m5_window=config_real.M5_CHART_WINDOW,
     )
 
-    os.makedirs(config.CHART_FOLDER, exist_ok=True)
+    os.makedirs(config_real.CHART_FOLDER, exist_ok=True)
 
     # Stage 1: Daily
     print("\n[Stage 1] Daily Bias Analysis...")
     daily_img, daily_payload = DailyBiasUtil.generate_daily_chart(
-        df_daily, folder=config.CHART_FOLDER
+        df_daily, folder=config_real.CHART_FOLDER
     )
     print(f"   Chart: {daily_img}")
     print(f"   Payload: {json.dumps(daily_payload, indent=4, ensure_ascii=False)}")
 
     # Gọi AI Stage 1
-    agent = ICTAIAgent(api_key=config.GEMINI_API_KEY, model_name=config.GEMINI_MODEL)
+    agent = ICTAIAgent(api_key=config_real.GEMINI_API_KEY, model_name=config_real.GEMINI_MODEL)
     daily_result = agent.analyze_daily(daily_img, daily_payload)
     if daily_result:
         print(f"\n   ✅ Daily Bias = {daily_result.get('daily_bias')}")
@@ -85,7 +85,7 @@ def run_dry_run():
         df_h1,
         daily_bias=daily_bias,
         daily_payload=daily_payload,
-        folder=config.CHART_FOLDER,
+        folder=config_real.CHART_FOLDER,
     )
     h1_payload['pdh'] = daily_payload['yesterday_anchors']['PDH']
     h1_payload['pdl'] = daily_payload['yesterday_anchors']['PDL']
@@ -108,7 +108,7 @@ def run_dry_run():
         df_m5,
         daily_bias=daily_bias,
         h1_payload=h1_payload,
-        folder=config.CHART_FOLDER,
+        folder=config_real.CHART_FOLDER,
     )
     print(f"   Chart: {m5_img}")
 
@@ -134,12 +134,12 @@ def run_live():
     """Chạy bot live."""
     print("═"*60)
     print("  ICT AUTO TRADING BOT V2 – LIVE MODE")
-    print(f"  Symbol      : {config.MT5_SYMBOL}")
-    print(f"  Risk/Trade  : {config.RISK_PERCENT}% equity")
-    print(f"  R:R         : 1:{config.RR_RATIO}")
-    print(f"  Magic       : {config.MAGIC_NUMBER}")
-    print(f"  AI Model    : {config.GEMINI_MODEL}")
-    print(f"  Trailing SL : {'ON' if config.TRAILING_ENABLED else 'OFF'}")
+    print(f"  Symbol      : {config_real.MT5_SYMBOL}")
+    print(f"  Risk/Trade  : {config_real.RISK_PERCENT}% equity")
+    print(f"  R:R         : 1:{config_real.RR_RATIO}")
+    print(f"  Magic       : {config_real.MAGIC_NUMBER}")
+    print(f"  AI Model    : {config_real.GEMINI_MODEL}")
+    print(f"  Trailing SL : {'ON' if config_real.TRAILING_ENABLED else 'OFF'}")
     print("═"*60 + "\n")
 
     trader = Trader()
