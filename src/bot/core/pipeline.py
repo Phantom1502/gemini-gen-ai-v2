@@ -105,23 +105,23 @@ class ICTPipeline:
         # ══════════════════════════════════════════════════════════
         # STAGE 1: Daily Bias (cache 4h)
         # ══════════════════════════════════════════════════════════
-        daily_context, daily_payload, daily_img = self._run_stage1(
+        daily_result, daily_payload, daily_img = self._run_stage1(
             df_daily, trigger_key
         )
-        if daily_context is None:
+        if daily_result is None:
             return {**EMPTY_RESULT, "trigger_hour": trigger_hour}
 
         # ══════════════════════════════════════════════════════════
         # STAGE 2: H1 Structure (cache per-hour)
         # ══════════════════════════════════════════════════════════
         h1_result, h1_payload, h1_img = self._run_stage2(
-            df_h1, daily_context, daily_payload, daily_context, hour_key
+            df_h1, daily_result, daily_payload, daily_result, hour_key
         )
         if h1_result is None:
             return {
                 **EMPTY_RESULT,
                 "trigger_hour": trigger_hour,
-                "stage1_daily": daily_context,
+                "stage1_daily": daily_result,
                 "daily_img":    daily_img,
                 "daily_payload": daily_payload,
             }
@@ -136,7 +136,7 @@ class ICTPipeline:
             return {
                 **EMPTY_RESULT,
                 "trigger_hour":  trigger_hour,
-                "stage1_daily":  daily_context,
+                "stage1_daily":  daily_result,
                 "stage2_h1":     h1_result,
                 "daily_img":     daily_img,
                 "h1_img":        h1_img,
@@ -148,7 +148,7 @@ class ICTPipeline:
             "final_action":  m5_result.get("action", "HOLD"),
             "pipeline_ok":   True,
             "trigger_hour":  trigger_hour,
-            "stage1_daily":  daily_context,
+            "stage1_daily":  daily_result,
             "stage2_h1":     h1_result,
             "stage3_m5":     m5_result,
             "daily_img":     daily_img,
@@ -196,7 +196,7 @@ class ICTPipeline:
         return result, payload, img
 
     def _run_stage2(
-        self, df_h1, daily_context: Dict, daily_payload: Dict,
+        self, df_h1, daily_context: str, daily_payload: Dict,
         daily_result: Dict, hour_key: Tuple
     ):
         """H1 Structure — cache theo hour_key (date, hour)."""
@@ -228,11 +228,10 @@ class ICTPipeline:
 
         self._h1_cache = {"key": hour_key, "result": result,
                           "payload": payload, "img": img}
-        ez = (result.get("entry_zone") or {})
         print(f"📊 [H1] Direction={result.get('direction')} | "
-              f"Zone={ez.get('zone_type','?')} "
-              f"[{ez.get('price_bot','?')}–{ez.get('price_top','?')}] | "
+              f"Ready={result.get('ready_to_trade')} | "
               f"Conf={result.get('confidence')}")
+        print(f"   📋 {result.get('h1_summary','')}")
         return result, payload, img
 
     def _run_stage3(self, df_m5, h1_result: Dict):

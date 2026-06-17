@@ -165,32 +165,49 @@ Output JSON theo schema DailyBiasContext.
 
             prompt = f"""\
 [DAILY BIAS CONTEXT — từ phân tích Daily]
-Hướng thiên vị  : {daily_context.get('bias')}
-Trạng thái Daily: {daily_context.get('market_state')}
+Hướng thiên vị   : {daily_context.get('bias')}
+Trạng thái Daily : {daily_context.get('market_state')}
 Draw on Liquidity: {dol.get('label')} @ {dol.get('price')} — {dol.get('reason')}
-HTF Invalidation: {daily_context.get('htf_invalidation')}
-Hướng dẫn cho H1: {daily_context.get('ltf_guidance')}
+HTF Invalidation : {daily_context.get('htf_invalidation')}
+Hướng dẫn cho H1 : {daily_context.get('ltf_guidance')}
 
-[DỮ LIỆU SỐ H1]
-Giá hiện tại    : {h1_payload.get('current_price')}
-EMA 50          : {h1_payload.get('ema_50')}  ({h1_payload.get('price_vs_ema50')})
-PDH / PDL       : {h1_payload.get('pdh')} / {h1_payload.get('pdl')}
-FVG active      : {h1_payload.get('active_fvg_count')}  |  OB active: {h1_payload.get('active_ob_count')}
-BOS gần nhất    : {_fmt_bos(h1_payload.get('last_bos'))}
-
-FVG active gần nhất (tối đa 3):
+[DỮ LIỆU SỐ H1 — chỉ để tham khảo, ưu tiên đọc chart]
+Giá hiện tại : {h1_payload.get('current_price')}
+EMA 50       : {h1_payload.get('ema_50')}  ({h1_payload.get('price_vs_ema50')})
+PDH / PDL    : {h1_payload.get('pdh')} / {h1_payload.get('pdl')}
+BOS gần nhất : {_fmt_bos(h1_payload.get('last_bos'))}
+FVG H1 (tham khảo vị trí):
 {_fmt_list(h1_payload.get('active_fvgs', []), _fmt_fvg)}
-
-OB active gần nhất (tối đa 3):
+OB H1 (tham khảo vị trí):
 {_fmt_list(h1_payload.get('active_obs', []), _fmt_ob)}
 
-[YÊU CẦU VISION — đọc chart H1 theo thứ tự]
-1. H1 trend có THUẬN với Daily Bias không? Nếu không → direction='WAIT'.
-2. Cấu trúc H1: BOS gần nhất theo hướng Daily ở đâu? Giá đang expansion hay pullback?
-3. Tìm entry_zone tốt nhất (FVG hoặc OB) thuận hướng, gần giá nhất, chưa lấp.
-4. Target: BSL/SSL H1 hoặc swing phù hợp với DOL Daily ở trên.
-5. Điều kiện vô hiệu kịch bản này (invalidation H1).
-6. scenario_note: chỉ dẫn thêm cho M5 nếu có cản cục bộ giữa entry và target.
+[YÊU CẦU — đọc chart H1 bằng mắt, theo thứ tự]
+1. H1 trend có THUẬN Daily Bias ({daily_context.get('bias')}) không?
+   Không thuận → direction='WAIT', ready_to_trade=false.
+
+2. Nhìn toàn bộ chart H1: cấu trúc đang ở pha nào?
+   (expansion / pullback / ranging / reversal)
+
+3. ĐÁNH GIÁ ready_to_trade — câu hỏi cốt lõi:
+   "Nhìn chart H1, tôi có thấy giá đã phản ứng đúng hướng chưa?"
+   
+   TRUE nếu thấy ít nhất MỘT trong các dấu hiệu sau trên chart:
+   - Nến H1 rejection rõ ràng (wick dài từ chối vùng supply/demand)
+   - Nến H1 mạnh đóng cửa theo hướng kịch bản (Bearish engulf, Bullish engulf)
+   - BOS H1 mới theo hướng kịch bản vừa xảy ra
+   - Giá đã vào vùng cung/cầu (OB/FVG) và đang thoát ra theo hướng kịch bản
+   
+   FALSE nếu:
+   - Giá chưa chạm vùng cung/cầu nào
+   - Không có phản ứng/xác nhận nào
+   - Momentum H1 ngược kịch bản
+   
+   QUAN TRỌNG: Đánh giá bằng MẮT NHÌN CHART.
+   Không dùng flag "mitigated/filled" từ số liệu để quyết định.
+   Giá đã ra khỏi vùng OB/FVG → vẫn TRUE nếu đã có rejection rõ.
+
+4. target: SSL/BSL H1 gần nhất nhất quán với DOL Daily.
+5. invalidation: mức H1 đóng cửa phủ nhận kịch bản.
 
 Output JSON theo schema H1TradingContext.
 """
@@ -206,13 +223,13 @@ Output JSON theo schema H1TradingContext.
                 ),
             )
             result = json.loads(response.text)
-            ez = result.get("entry_zone") or {}
             print(
                 f"   ✅ Direction={result.get('direction')} | "
-                f"Zone={ez.get('zone_type')} [{ez.get('price_bot')}–{ez.get('price_top')}] | "
+                f"Ready={result.get('ready_to_trade')} | "
                 f"Target={result.get('target')} | "
-                f"Confidence={result.get('confidence')}"
+                f"Conf={result.get('confidence')}"
             )
+            print(f"   📋 {result.get('h1_summary')}")
             return result
 
         except Exception as e:
@@ -258,43 +275,41 @@ Output JSON theo schema H1TradingContext.
         try:
             img = Image.open(image_path)
 
-            # entry_zone: guard nếu Gemini trả về string thay vì dict
-            _ez_raw = h1_context.get("entry_zone") or {}
-            if isinstance(_ez_raw, dict):
-                ez = _ez_raw
-            else:
-                try:
-                    ez = json.loads(_ez_raw) if isinstance(_ez_raw, str) else {}
-                except Exception:
-                    ez = {"zone_type": str(_ez_raw), "price_top": "—",
-                          "price_bot": "—", "description": "—"}
-
             prompt = f"""\
-[H1 TRADING CONTEXT — nhiệm vụ của bạn]
-Hướng giao dịch  : {h1_context.get('direction')}
-Cấu trúc H1      : {h1_context.get('h1_structure')}
-Entry Zone H1     : {ez.get('zone_type')}  [{ez.get('price_bot')} – {ez.get('price_top')}]
-                    → {ez.get('description')}
-Target (TP H1)    : {h1_context.get('target')}
-Invalidation H1   : {h1_context.get('invalidation')}
-Ghi chú kịch bản : {h1_context.get('scenario_note')}
+[H1 CONTEXT — lệnh tác chiến từ H1]
+Hướng          : {h1_context.get('direction')}
+H1 sẵn sàng   : {h1_context.get('ready_to_trade')}
+Lý do H1      : {h1_context.get('h1_summary')}
+Target (TP)   : {h1_context.get('target')}
+Invalidation  : {h1_context.get('invalidation')}
 
 [DỮ LIỆU SỐ M5]
-Thời điểm        : {m5_payload.get('timestamp')}
-Giá hiện tại     : {m5_payload.get('current_price')}
-EMA 21           : {m5_payload.get('ema_21')}  ({m5_payload.get('price_vs_ema21')})
+Thời điểm     : {m5_payload.get('timestamp')}
+Giá hiện tại  : {m5_payload.get('current_price')}
+EMA 21        : {m5_payload.get('ema_21')}  ({m5_payload.get('price_vs_ema21')})
+CHoCH gần nhất: {_fmt_choch(m5_payload.get('choch'))}
+FVG M5        : {_fmt_fvg_m5(m5_payload.get('entry_fvg'))}
 
-CHoCH gần nhất   : {_fmt_choch(m5_payload.get('choch'))}
+[YÊU CẦU — đọc chart M5, theo đúng thứ tự]
+BƯỚC 1 — Cửa gác H1:
+  direction='{h1_context.get('direction')}' + ready_to_trade={h1_context.get('ready_to_trade')}
+  - direction='WAIT' hoặc ready_to_trade=false
+    → HOLD. hold_reason='H1 chưa sẵn sàng: {{h1_context.get("h1_summary")}}'
+  - Qua được: M5 được phép tìm entry theo hướng '{h1_context.get('direction')}'.
 
-FVG M5 entry     : {_fmt_fvg_m5(m5_payload.get('entry_fvg'))}
+BƯỚC 2 — CHoCH M5:
+  Tìm trên chart: đường đứt dọc {'xanh/teal' if h1_context.get('direction')=='BUY' else 'đỏ'} (CHoCH_{'BULL' if h1_context.get('direction')=='BUY' else 'BEAR'}).
+  Chưa có → HOLD. hold_reason='Chưa có CHoCH M5.'
 
-[YÊU CẦU VISION — đọc chart M5 theo thứ tự]
-1. Hướng H1 là '{h1_context.get('direction')}' — chỉ tìm setup theo hướng này.
-2. Giá M5 hiện tại có đang trong Entry Zone [{ez.get('price_bot')} – {ez.get('price_top')}] không?
-3. CHoCH M5 (đường đứt dọc trên chart) cùng hướng đã xuất hiện chưa?
-4. FVG M5 (vùng tô màu) có nằm trong entry zone H1 không?
-5. EMA21: giá có overextended không?
-6. Kết luận: BUY / SELL / HOLD với lý do cụ thể từ price action M5.
+BƯỚC 3 — Entry (sau CHoCH):
+  Ưu tiên: FVG M5 (vùng tô màu) → Retest swing/OB M5 → CHoCH + EMA21 hội tụ.
+  KHÔNG cần quay lại vùng H1. Entry từ price action M5 thuần túy.
+
+BƯỚC 4 — EMA21:
+  Overextended xa EMA21 → HOLD chờ retest.
+
+BƯỚC 5 — SL/TP:
+  SL: swing low/high M5 gần nhất. TP: target H1 = {h1_context.get('target')}.
 
 Output JSON theo schema M5EntryResult.
 """

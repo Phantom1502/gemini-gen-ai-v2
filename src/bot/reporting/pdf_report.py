@@ -282,16 +282,12 @@ def generate_session_report(
     pdf.section_title("3. STAGE 2 — H1 STRUCTURE")
 
     if h1_result:
-        ez = h1_result.get("entry_zone") or {}
-        pdf.colored_badge("H1 Direction", h1_result.get("direction", "—"))
-        pdf.colored_badge("Confidence",   h1_result.get("confidence", "—"))
-        pdf.kv_row("H1 Structure",        h1_result.get("h1_structure", "—"))
-        pdf.kv_row("Entry Zone",
-                   f"{ez.get('zone_type','—')} [{ez.get('price_bot','—')} – {ez.get('price_top','—')}]")
-        pdf.kv_row("Zone Detail",         ez.get("description", "—"))
-        pdf.kv_row("Target (TP)",         h1_result.get("target", "—"))
-        pdf.kv_row("Invalidation",        h1_result.get("invalidation", "—"))
-        pdf.kv_row("Scenario Note",       h1_result.get("scenario_note", "—"))
+        pdf.colored_badge("H1 Direction",   h1_result.get("direction", "—"))
+        pdf.colored_badge("Confidence",     h1_result.get("confidence", "—"))
+        pdf.colored_badge("Ready to Trade", "HIGH" if h1_result.get("ready_to_trade") else "LOW")
+        pdf.kv_row("H1 Summary",    h1_result.get("h1_summary", "—"))
+        pdf.kv_row("Target (TP)",   h1_result.get("target", "—"))
+        pdf.kv_row("Invalidation",  h1_result.get("invalidation", "—"))
     else:
         pdf.set_font(fn, "I", 9); pdf.set_text_color(239, 83, 80)
         pdf.cell(0, 7, "  ✗ Stage 2 không có kết quả.", ln=True)

@@ -55,7 +55,6 @@ class CSVLogger:
         h1_r    = pipeline.get("stage2_h1")    or {}
         m5_r    = pipeline.get("stage3_m5")    or {}
         dol     = (daily_r.get("draw_on_liquidity") or {})
-        h1_ez   = (h1_r.get("entry_zone") or {})
 
         return {
             "Open_Timestamp":   now,
@@ -73,13 +72,12 @@ class CSVLogger:
             "Daily_LTF_Guidance": daily_r.get("ltf_guidance", ""),
 
             # H1TradingContext
-            "H1_Direction":    h1_r.get("direction", ""),
-            "H1_Confidence":   h1_r.get("confidence", ""),
-            "H1_Structure":    h1_r.get("h1_structure", ""),
-            "H1_EntryZone":    (f"{h1_ez.get('zone_type','')} "
-                                f"[{h1_ez.get('price_bot','')}–{h1_ez.get('price_top','')}]"),
-            "H1_Target":       h1_r.get("target", ""),
-            "H1_Invalidation": h1_r.get("invalidation", ""),
+            "H1_Direction":      h1_r.get("direction", ""),
+            "H1_Ready":          h1_r.get("ready_to_trade", ""),
+            "H1_Summary":        h1_r.get("h1_summary", ""),
+            "H1_Target":         h1_r.get("target", ""),
+            "H1_Invalidation":   h1_r.get("invalidation", ""),
+            "H1_Confidence":     h1_r.get("confidence", ""),
 
             # M5EntryResult
             "M5_Action":          m5_r.get("action", ""),
