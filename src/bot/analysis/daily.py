@@ -13,7 +13,7 @@ import matplotlib.pyplot as plt
 import mplfinance as mpf
 from typing import Dict, List, Tuple, Optional
 
-from utils.mt5util import resample_h1_to_daily_oanda
+from bot.broker.mt5 import resample_h1_to_daily_oanda
 
 
 class DailyBiasUtil:
@@ -100,7 +100,7 @@ class DailyBiasUtil:
         if total_candles == 0:
             raise ValueError("DataFrame trống.")
 
-        yesterday_idx        = total_candles - 2 # Nến cuối là nến hiện tại, nến hôm qua là -2
+        yesterday_idx        = total_candles - 2 # Nến cuối là nến hiện tại, lấy nến hôm qua làm reference
         yesterday            = df.iloc[yesterday_idx]
         pdh_price            = float(yesterday['High'])
         pdl_price            = float(yesterday['Low'])

@@ -1,5 +1,5 @@
 """
-config.py  (V2.1)
+config.py  (V3.0)
 =================
 Tập trung toàn bộ tham số cấu hình.
 Chỉnh sửa file này để điều chỉnh bot mà không cần đụng vào code logic.
@@ -18,13 +18,13 @@ MT5_SYMBOL      = core_config.MT5_SYMBOL
 # ══════════════════════════════════════════════════════════════════
 # AI / GEMINI
 # ══════════════════════════════════════════════════════════════════
-GEMINI_API_KEY  = core_config.GEMINI_API_KEY    
-GEMINI_MODEL    = core_config.GEMINI_MODEL        # "gemini-2.0-flash" hoặc "gemini-1.5-pro"
+GEMINI_API_KEY  = core_config.GEMINI_API_KEY
+GEMINI_MODEL    = core_config.GEMINI_MODEL
 
 # ══════════════════════════════════════════════════════════════════
 # QUẢN LÝ VỐN
 # ══════════════════════════════════════════════════════════════════
-RISK_PERCENT    = 0.2
+RISK_PERCENT    = 0.5
 RR_RATIO        = 2.5
 SPREADS         = 260
 MAGIC_NUMBER    = 20261606
@@ -43,9 +43,9 @@ TRAILING_STEP_POINTS   = 150
 # BỘ LỌC PHIÊN GIAO DỊCH (UTC+7 — Giờ Việt Nam local)
 # ══════════════════════════════════════════════════════════════════
 ALLOWED_SESSIONS = [
-    {"name": "London Open",       "start": "14:00", "end": "18:00"},
-    {"name": "NY Open",           "start": "19:30", "end": "23:30"},
-    {"name": "London-NY Overlap", "start": "19:00", "end": "22:00"},
+    {"name": "Tokyo Open",       "start": "07:00", "end": "12:00"},
+    {"name": "London Open",       "start": "12:00", "end": "18:00"},
+    {"name": "NY Open",           "start": "18:00", "end": "23:30"},
 ]
 ALLOWED_WEEKDAYS        = [0, 1, 2, 3, 4]   # Thứ 2 → Thứ 6
 FORCE_CLOSE_FRIDAY_TIME = "22:30"            # Giờ local (UTC+7)
@@ -55,7 +55,7 @@ FORCE_CLOSE_FRIDAY_TIME = "22:30"            # Giờ local (UTC+7)
 # ══════════════════════════════════════════════════════════════════
 H1_FETCH_COUNT  = 700    # ~29 ngày H1 để resample Daily đủ 22 nến
 H1_CHART_WINDOW = 60
-M5_CHART_WINDOW = 120
+M5_CHART_WINDOW = 60
 DAILY_CANDLES   = 20
 
 # Daily Bias chỉ được query lại tại các giờ này (GMT 0):

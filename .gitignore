@@ -6,3 +6,10 @@ data/logs/
 src/config_real.py
 data/reports/
 src/core_config.py
+src/bot/__pycache__/
+src/bot/ai/__pycache__/
+src/bot/analysis/__pycache__/
+src/bot/broker/__pycache__/
+src/bot/core/__pycache__/
+src/bot/management/__pycache__/
+src/bot/reporting/__pycache__/
