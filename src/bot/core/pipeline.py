@@ -173,6 +173,7 @@ class ICTPipeline:
 
         print(f"🔄 [DAILY] Refresh tại trigger={trigger_key[1]:02d}h GMT...")
         try:
+            df_daily = df_daily[df_daily.index.weekday < 5]
             img, payload = DailyBiasUtil.generate_daily_chart(
                 df_daily, folder=config.CHART_FOLDER
             )
@@ -219,8 +220,8 @@ class ICTPipeline:
             return None, None, None
 
         # Bổ sung PDH/PDL vào h1_payload để M5 chart tham chiếu
-        payload["pdh"] = daily_payload["yesterday_anchors"]["PDH"]
-        payload["pdl"] = daily_payload["yesterday_anchors"]["PDL"]
+        payload["pdh"] = daily_payload["previous_day_anchors"]["PDH"]
+        payload["pdl"] = daily_payload["previous_day_anchors"]["PDL"]
 
         result = self.agent.analyze_h1(img, payload, daily_result)
         if result is None:

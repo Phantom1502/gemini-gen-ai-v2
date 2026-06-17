@@ -23,7 +23,7 @@ GEMINI_MODEL    = core_config.GEMINI_MODEL
 # ══════════════════════════════════════════════════════════════════
 # QUẢN LÝ VỐN
 # ══════════════════════════════════════════════════════════════════
-RISK_PERCENT    = 0.5
+RISK_PERCENT    = 0.2
 RR_RATIO        = 2.5
 SPREADS         = 260
 MAGIC_NUMBER    = 20261606

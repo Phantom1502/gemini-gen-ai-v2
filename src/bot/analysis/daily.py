@@ -36,7 +36,7 @@ class DailyBiasUtil:
         highs  = df['High'].values
         lows   = df['Low'].values
         closes = df['Close'].values
-        length = len(df)
+        length = len(df) - 1
 
         liquidity_lines: List[Dict] = []
 
@@ -100,7 +100,10 @@ class DailyBiasUtil:
         if total_candles == 0:
             raise ValueError("DataFrame trống.")
 
-        yesterday_idx        = total_candles - 2
+        close_price = float(df.iloc[-1]['Close'])
+        daily_open_price = float(df.iloc[-1]['Open'])
+
+        yesterday_idx        = total_candles - 2 # Nến cuối là nến hiện tại, lấy nến hôm qua làm reference
         yesterday            = df.iloc[yesterday_idx]
         pdh_price            = float(yesterday['High'])
         pdl_price            = float(yesterday['Low'])
@@ -118,59 +121,86 @@ class DailyBiasUtil:
         y_limits      = (lowest_price - y_pad, highest_price + y_pad)
 
         mc = mpf.make_marketcolors(up='#26a69a', down='#ef5350', edge='inherit', wick='inherit')
-        s  = mpf.make_mpf_style(marketcolors=mc, gridcolor='#2a2e39', facecolor='#131722')
+        s  = mpf.make_mpf_style(
+            marketcolors=mc, 
+            gridcolor='#2a2e39', 
+            facecolor='#131722'
+        )
 
         fig, axes = mpf.plot(
             df, type='candle', style=s, returnfig=True,
             figsize=(11, 7), axisoff=False,
-            xlim=x_limits, ylim=y_limits, tight_layout=True
+            xlim=x_limits, ylim=y_limits, tight_layout=True,
+            update_width_config=dict(
+                candle_linewidth=3.0
+            )
         )
         ax = axes[0]
+        ax.get_xaxis().set_visible(False)
+        ax.get_yaxis().set_visible(False) 
+        ax.grid(False)                     
         ax.get_xaxis().set_visible(False)
         ax.yaxis.tick_right()
         ax.tick_params(axis='y', colors='#848e9c', labelsize=9)
 
         # ── BSL / SSL ──────────────────────────────
-        liq_lines = DailyBiasUtil.analyze_liquidity_lifecycles(df, swing_window=2)
+        liq_lines = DailyBiasUtil.analyze_liquidity_lifecycles(df, swing_window=1)
         for line in liq_lines:
             base_color = '#ff9100' if line['type'] == 'BSL' else '#00b0ff'
             if line['status'] == 'broken':
-                ax.plot([line['start_idx'], line['end_idx']],
+                ax.plot([line['start_idx'], line['end_idx']-0.5],
                         [line['price'], line['price']],
-                        color=base_color, linestyle=':', linewidth=0.8, alpha=0.3)
+                        color='#ffffff', linestyle='-', linewidth=2)
+                va = 'bottom' if line['type'] == 'BSL' else 'top'
+                ax.text((line['start_idx'] + line['end_idx'])/2, line['price'], f"BOS",
+                        color='#ffffff', fontsize=14, weight='bold', va=va, ha='center')
             elif line['status'] == 'swept':
-                ax.plot([line['start_idx'], yesterday_idx],
+                ax.plot([line['start_idx'], end_plot_idx],
                         [line['price'], line['price']],
-                        color=base_color, linestyle='-', linewidth=1.0, alpha=0.4)
+                        color=base_color, linestyle='-', linewidth=1.5, alpha=0.6)
                 for si in line['swept_indices']:
                     ax.scatter(si, line['price'], color='#ffea00', marker='x', s=25, zorder=5)
+                va = 'bottom' if line['type'] == 'BSL' else 'top'
+                ax.text((line['start_idx'] + 1), line['price'], f" {line['status']}",
+                        color='#999999', fontsize=14, weight='bold', va=va)
             elif line['status'] == 'active':
                 ax.plot([line['start_idx'], end_plot_idx],
                         [line['price'], line['price']],
-                        color=base_color, linestyle='-', linewidth=1.5, alpha=0.7)
+                        color=base_color, linestyle='-', linewidth=2.5, alpha=0.7)
                 va = 'bottom' if line['type'] == 'BSL' else 'top'
                 ax.text(total_candles, line['price'], f" {line['type']}",
-                        color=base_color, fontsize=7, weight='bold', va=va)
+                        color=base_color, fontsize=14, weight='bold', va=va)
 
-        # ── PDH / PDL ──────────────────────────────
-        ax.axhline(pdh_price, color='#ff6b6b', linestyle='--', linewidth=1.0, alpha=0.6)
-        ax.axhline(pdl_price, color='#69db7c', linestyle='--', linewidth=1.0, alpha=0.6)
-        ax.text(end_plot_idx, pdh_price, ' PDH', color='#ff6b6b', fontsize=7, va='bottom')
-        ax.text(end_plot_idx, pdl_price, ' PDL', color='#69db7c', fontsize=7, va='top')
+        # ── NÂNG CẤP 3: T-2 HIGH / LOW (CHỈ VẼ ĐẾN HẾT NẾN T-1) ───
+        if total_candles >= 3:
+            t2_idx = total_candles - 3
+            t2_high = float(df.iloc[t2_idx]['High'])
+            t2_low = float(df.iloc[t2_idx]['Low'])
+            
+            # Vẽ đoạn ngắn từ nến T-2 đến nến T-1 (yesterday_idx)
+            ax.plot([t2_idx, yesterday_idx], [t2_high, t2_high], color='#e57373', linestyle=':', linewidth=1.2, alpha=0.5)
+            ax.plot([t2_idx, yesterday_idx], [t2_low, t2_low], color='#81c784', linestyle=':', linewidth=1.2, alpha=0.5)
+            
+            # Label dán ở điểm kết thúc (đầu nến T-1) căn lề phải (ha='right')
+            ax.text(t2_idx - 0.5, t2_high, 'T2H', color='#ff6b6b', fontsize=14, va='bottom', ha='left')
+            ax.text(t2_idx - 0.5, t2_low, 'T2L', color='#69db7c', fontsize=14, va='top', ha='left')
+
+        # ── NÂNG CẤP 2: ĐƯỜNG CURRENT PRICE REAL-TIME ───
+        current_idx = total_candles - 1
+        ax.axhline(close_price, color='#ffffff', linestyle='--', linewidth=1.0, alpha=0.8)
 
         # ── Equilibrium ────────────────────────────
         eq_price = (pdh_price + pdl_price) / 2
-        ax.axhline(eq_price, color='#a8a8a8', linestyle=':', linewidth=0.8, alpha=0.5)
-        ax.text(end_plot_idx, eq_price, ' EQ', color='#a8a8a8', fontsize=7, va='center')
+        #ax.axhline(eq_price, color='#a8a8a8', linestyle=':', linewidth=0.8, alpha=0.5)
+        #ax.text(end_plot_idx, eq_price, ' EQ', color='#a8a8a8', fontsize=7, va='center')
 
-        last_time   = df.index[-1].strftime("%Y%m%d")
+        current_tick = df.index[-1]
+        last_time           = current_tick.strftime("%Y%m%d")
+        day_of_week         = current_tick.strftime("%A")        # "Wednesday"
+        current_time_utc    = current_tick.strftime("%H:%M")     # "15:00"
         output_path = os.path.join(folder, f"daily_ict_{last_time}.png")
         fig.savefig(output_path, bbox_inches='tight', pad_inches=0.1, dpi=180)
         plt.close(fig)
-
-        # ── Numerical payload ──────────────────────
-        equilibrium_price = float(eq_price)
-        price_position    = "PREMIUM" if yesterday_close_price > equilibrium_price else "DISCOUNT"
 
         recent_swept = []
         for l in liq_lines:
@@ -184,24 +214,18 @@ class DailyBiasUtil:
                     })
 
         payload = {
-            "target_date": last_time,
-            "market_context": {
-                "current_price": yesterday_close_price,
-                "total_candles_analyzed": total_candles,
-                "price_zone_vs_equilibrium": price_position
+            "metadata": {
+                "target_date": last_time,
+                "day_of_week": day_of_week,
+                "current_time_utc": current_time_utc
             },
-            "mathematical_metrics": {
-                "equilibrium": equilibrium_price,
-                "distance_to_equilibrium_pct": round(
-                    ((yesterday_close_price - equilibrium_price) / equilibrium_price) * 100, 3
-                )
+            "live_price_data": {
+                "current_price": float(close_price),
+                "daily_open_price": float(daily_open_price)
             },
-            "yesterday_anchors": {
-                "PDH": pdh_price,
-                "PDL": pdl_price,
-                "yesterday_open": yesterday_open_price,
-                "yesterday_close": yesterday_close_price,
-                "is_yesterday_bearish": bool(yesterday_close_price < yesterday_open_price)
+            "previous_day_anchors": {
+                "PDH": float(pdh_price),
+                "PDL": float(pdl_price)
             },
             "liquidity_map": {
                 "active_liquidity": [
